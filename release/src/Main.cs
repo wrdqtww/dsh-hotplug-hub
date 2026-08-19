@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -36,6 +36,7 @@ namespace DSHHotplugHub
         private readonly WebView2 webView = new WebView2();
         private const string APP_VERSION = "0.1.7";
         private const string PROJECT_REPO = "ARFCON/dsh-hotplug-hub";
+        private static bool _updateNotified = false;
 
         public MainForm()
         {
@@ -58,6 +59,7 @@ namespace DSHHotplugHub
         {
             try
             {
+                InstallPluginsToHarness();
                 string html = ReadEmbeddedHtml();
                 html = InjectSidebarLaunchButton(html);
 
@@ -104,7 +106,10 @@ namespace DSHHotplugHub
                         {
                             OpenProjectDownloadPage();
                         }
-                        else if (message == "listSkills")
+                        else if (message == "listMemory")
+                        {
+                            await webView.CoreWebView2.ExecuteScriptAsync("window.__setMemory(" + GetMemoryJson() + ");");
+                        }                        else if (message == "listSkills")
                         {
                             await webView.CoreWebView2.ExecuteScriptAsync("window.__setSkills(" + GetSkillsJson() + ");");
                         }
@@ -154,6 +159,12 @@ namespace DSHHotplugHub
                             await webView.CoreWebView2.ExecuteScriptAsync(BuildNativeSelfCheckScript());
                             await webView.CoreWebView2.ExecuteScriptAsync(BuildApiIntegrationScript());
                             await webView.CoreWebView2.ExecuteScriptAsync("window.__setSkills=function(d){window.__skillsData=d||[];if(typeof renderSkills==='function')renderSkills();};window.__setMcps=function(d){window.__mcpsData=d||[];if(typeof renderMcp==='function')renderMcp();};window.chrome.webview.postMessage('listSkills');window.chrome.webview.postMessage('listMcp');");
+                            string latestCheck = GetLatestReleaseVersion();
+                            if (!_updateNotified && !string.IsNullOrEmpty(latestCheck) && latestCheck != APP_VERSION)
+                            {
+                                _updateNotified = true;
+                                await webView.CoreWebView2.ExecuteScriptAsync("if(typeof toast==='function')toast('发现新版本 v" + latestCheck + "，请到 自检更新 下载');");
+                            }
                         }
                     }
                     catch
@@ -835,27 +846,32 @@ namespace DSHHotplugHub
 
         private static string[] LoadProviderIds()
         {
-            string[] defaults = new string[] { "DeepSeek 官方", "OpenAI 兼容", "通义千问", "智谱", "自定义" };
             try
             {
-                string settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "settings.yaml");
-                if (!File.Exists(settings)) return defaults;
-                string yaml = File.ReadAllText(settings);
-                int idx = yaml.IndexOf("llm-pi-ai:");
-                if (idx < 0) return defaults;
-                int prov = yaml.IndexOf("providers:", idx);
-                if (prov < 0) return defaults;
-                string block = yaml.Substring(prov);
                 List<string> ids = new List<string>();
-                foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(block, @"^\s{4}([a-zA-Z0-9_-]+):", System.Text.RegularExpressions.RegexOptions.Multiline))
+                ids.Add("DeepSeek 官方");
+                string settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "settings.yaml");
+                if (File.Exists(settings))
                 {
-                    if (ids.Count >= 20) break;
-                    ids.Add(m.Groups[1].Value);
+                    string yaml = File.ReadAllText(settings);
+                    int idx = yaml.IndexOf("llm-pi-ai:");
+                    if (idx >= 0)
+                    {
+                        int prov = yaml.IndexOf("providers:", idx);
+                        if (prov >= 0)
+                        {
+                            string block = yaml.Substring(prov);
+                            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(block, @"^\s{4}([a-zA-Z0-9_-]+):", System.Text.RegularExpressions.RegexOptions.Multiline))
+                            {
+                                if (ids.Count >= 20) break;
+                                if (!ids.Contains(m.Groups[1].Value)) ids.Add(m.Groups[1].Value);
+                            }
+                        }
+                    }
                 }
-                if (ids.Count == 0) return defaults;
                 return ids.ToArray();
             }
-            catch { return defaults; }
+            catch { return new string[] { "DeepSeek 官方" }; }
         }
 
         private static ApiConfig LoadProviderConfig(string id)
@@ -867,6 +883,50 @@ namespace DSHHotplugHub
             cfg.defaultModel = "deepseek-chat";
             try
             {
+                string settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "settings.yaml");
+                if (File.Exists(settings))
+                {
+                    string yaml = File.ReadAllText(settings);
+                    bool isDeepSeek = id.Contains("DeepSeek") || id.Contains("deepseek");
+                    if (isDeepSeek || yaml.Contains("llm-deepseek:"))
+                    {
+                        int di = yaml.IndexOf("llm-deepseek:");
+                        if (di >= 0)
+                        {
+                            string block = yaml.Substring(di);
+                            int end = block.IndexOf("\nllm-", 1);
+                            if (end > 0) block = block.Substring(0, end);
+                            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(block, @"^\s{4}-\s+id:\s*([^\s]+)", System.Text.RegularExpressions.RegexOptions.Multiline))
+                            {
+                                if (cfg.models.Length == 0) cfg.models = m.Groups[1].Value; else cfg.models += "," + m.Groups[1].Value;
+                            }
+                            if (cfg.models.Length == 0) { cfg.models = "deepseek-chat,deepseek-reasoner"; }
+                            cfg.defaultModel = cfg.models.Split(',')[0].Trim();
+                        }
+                    }
+                    else
+                    {
+                        string pattern = @"\n\s{4}" + System.Text.RegularExpressions.Regex.Escape(id) + @":([\s\S]*?)(?=\n\s{4}[a-zA-Z0-9_-]+:|\n\s{2}[a-zA-Z0-9_-]+:|\z)";
+                        System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(yaml, pattern, System.Text.RegularExpressions.RegexOptions.Multiline);
+                        if (m.Success)
+                        {
+                            string block = m.Groups[1].Value;
+                            System.Text.RegularExpressions.Match bm = System.Text.RegularExpressions.Regex.Match(block, @"baseURL:\s*([^\s]+)");
+                            if (bm.Success) cfg.baseUrl = bm.Groups[1].Value.Trim();
+                            System.Text.RegularExpressions.MatchCollection ms = System.Text.RegularExpressions.Regex.Matches(block, @"^\s{8}-\s+id:\s*([^\s]+)", System.Text.RegularExpressions.RegexOptions.Multiline);
+                            if (ms.Count > 0)
+                            {
+                                cfg.models = "";
+                                foreach (System.Text.RegularExpressions.Match mm in ms)
+                                {
+                                    if (cfg.models.Length == 0) cfg.models = mm.Groups[1].Value; else cfg.models += "," + mm.Groups[1].Value;
+                                }
+                                cfg.defaultModel = cfg.models.Split(',')[0].Trim();
+                            }
+                        }
+                    }
+                }
+
                 string cred = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", ".credentials.yaml");
                 if (File.Exists(cred))
                 {
@@ -1051,28 +1111,106 @@ namespace DSHHotplugHub
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "mcp.json");
         }
 
+        // 启动时自动把仓库插件安装/注册到本地 DeepSeek Harness
+        private static void InstallPluginsToHarness()
+        {
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string src = Path.GetFullPath(Path.Combine(baseDir, "..", "dsh-hotplug-hub", "dsh-memory-hub"));
+                if (!Directory.Exists(src)) return;
+                string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                string target = Path.Combine(home, ".dsh", "plugin-src", "dsh-memory-hub");
+                if (Directory.Exists(target)) { try { Directory.Delete(target, true); } catch { } }
+                CopyDirectory(src, target);
+
+                string patch = Path.Combine(home, ".dsh", "profiles", "web", "cordis.patch.yml");
+                if (File.Exists(patch))
+                {
+                    string text = File.ReadAllText(patch);
+                    text = text.Replace("# [已禁用]     - id: memory-hub", "    - id: memory-hub");
+                    text = text.Replace("# [已禁用]       name: 'dsh-memory-hub'", "      name: 'dsh-memory-hub'");
+                    if (!text.Contains("name: 'dsh-memory-hub'"))
+                    {
+                        text = text.TrimEnd() + "\n- insert:\n    - id: memory-hub\n      name: 'dsh-memory-hub'\n      config: { \"hubDir\": null, \"writePolicy\": \"ask\", \"snapshotOrder\": -50 }\n";
+                    }
+                    File.WriteAllText(patch, text);
+                }
+            }
+            catch { }
+        }
+
+        private static void CopyDirectory(string source, string target)
+        {
+            Directory.CreateDirectory(target);
+            foreach (string file in Directory.GetFiles(source))
+            {
+                File.Copy(file, Path.Combine(target, Path.GetFileName(file)), true);
+            }
+            foreach (string dir in Directory.GetDirectories(source))
+            {
+                CopyDirectory(dir, Path.Combine(target, Path.GetFileName(dir)));
+            }
+        }
+        private static string GetMemoryJson()
+        {
+            try
+            {
+                string repo = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".."));
+                ProcessStartInfo psi = new ProcessStartInfo("node", "scripts/memoryhub-list.mjs");
+                psi.WorkingDirectory = repo;
+                psi.UseShellExecute = false;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                psi.CreateNoWindow = true;
+                using (Process p = Process.Start(psi))
+                {
+                    string output = p.StandardOutput.ReadToEnd().Trim();
+                    p.WaitForExit(10000);
+                    return string.IsNullOrEmpty(output) ? "[]" : output;
+                }
+            }
+            catch { return "[]"; }
+        }
         private static string GetSkillsJson()
         {
             try
             {
                 string dir = SkillsDir();
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                if (Directory.GetFiles(dir, "*.md").Length == 0)
-                {
-                    File.WriteAllText(Path.Combine(dir, "skill-deep-research.md"), "# DeepSeek 深度研究\n\n多轮推理与资料整理\n");
-                    File.WriteAllText(Path.Combine(dir, "skill-code-review.md"), "# 代码审查\n\n代码质量与安全审查\n");
-                }
                 List<Dictionary<string, object>> list = new List<Dictionary<string, object>>();
                 foreach (string file in Directory.GetFiles(dir, "*.md"))
                 {
                     string id = Path.GetFileNameWithoutExtension(file);
-                    string firstLine = "";
-                    try { firstLine = File.ReadAllLines(file)[0].TrimStart('#', ' ', '\t'); } catch { }
+                    string name = id;
+                    string desc = "本地 Skill";
+                    try
+                    {
+                        string text = File.ReadAllText(file);
+                        if (text.StartsWith("---"))
+                        {
+                            int end = text.IndexOf("\n---", 3);
+                            if (end > 0)
+                            {
+                                string fm = text.Substring(3, end - 3);
+                                foreach (string line in fm.Split('\n'))
+                                {
+                                    if (line.StartsWith("name:")) name = line.Substring("name:".Length).Trim();
+                                    if (line.StartsWith("description:")) desc = line.Substring("description:".Length).Trim();
+                                }
+                            }
+                        }
+                        else
+                        {
+                            name = text.TrimStart('#', ' ', '\t', '\r', '\n').Split('\n')[0].Trim();
+                        }
+                    }
+                    catch { }
                     Dictionary<string, object> item = new Dictionary<string, object>();
                     item["id"] = id;
-                    item["name"] = string.IsNullOrEmpty(firstLine) ? id : firstLine;
+                    item["name"] = string.IsNullOrEmpty(name) ? id : name;
                     item["enabled"] = true;
-                    item["desc"] = "本地 Skill";
+                    item["desc"] = desc;
                     list.Add(item);
                 }
                 return new JavaScriptSerializer().Serialize(list);
@@ -1087,10 +1225,18 @@ namespace DSHHotplugHub
                 JavaScriptSerializer ser = new JavaScriptSerializer();
                 Dictionary<string, object> data = ser.Deserialize<Dictionary<string, object>>(payload);
                 string name = data != null && data.ContainsKey("name") ? Convert.ToString(data["name"]) : "skill";
+                string desc = data != null && data.ContainsKey("desc") ? Convert.ToString(data["desc"]) : "";
                 string id = "skill-" + DateTime.Now.Ticks.ToString("x");
                 string dir = SkillsDir();
                 Directory.CreateDirectory(dir);
-                File.WriteAllText(Path.Combine(dir, id + ".md"), "# " + name + "\n\n" + (data != null && data.ContainsKey("desc") ? Convert.ToString(data["desc"]) : "") + "\n");
+                string frontmatter =
+                    "---\n" +
+                    "name: " + name + "\n" +
+                    "description: " + desc + "\n" +
+                    "disable-model-invocation: false\n" +
+                    "---\n\n" +
+                    desc + "\n";
+                File.WriteAllText(Path.Combine(dir, id + ".md"), frontmatter);
             }
             catch { }
         }
@@ -1112,14 +1258,8 @@ namespace DSHHotplugHub
                 string file = McpFilePath();
                 if (!File.Exists(file))
                 {
-                    List<Dictionary<string, object>> defaults = new List<Dictionary<string, object>>();
-                    Dictionary<string, object> fs = new Dictionary<string, object>();
-                    fs["id"] = "mcp-filesystem"; fs["name"] = "Filesystem MCP"; fs["command"] = "npx"; fs["args"] = "-y @modelcontextprotocol/server-filesystem";
-                    Dictionary<string, object> fetch = new Dictionary<string, object>();
-                    fetch["id"] = "mcp-fetch"; fetch["name"] = "Fetch MCP"; fetch["command"] = "npx"; fetch["args"] = "-y @modelcontextprotocol/server-fetch";
-                    defaults.Add(fs); defaults.Add(fetch);
                     Directory.CreateDirectory(Path.GetDirectoryName(file));
-                    File.WriteAllText(file, new JavaScriptSerializer().Serialize(defaults));
+                    File.WriteAllText(file, "[]");
                 }
                 return File.ReadAllText(file);
             }
@@ -1142,6 +1282,7 @@ namespace DSHHotplugHub
                 if (idx >= 0) list[idx] = mcp; else list.Add(mcp);
                 Directory.CreateDirectory(Path.GetDirectoryName(file));
                 File.WriteAllText(file, ser.Serialize(list));
+                WriteMcpToPatch(mcp);
             }
             catch { }
         }
@@ -1156,10 +1297,64 @@ namespace DSHHotplugHub
                 List<Dictionary<string, object>> list = ser.Deserialize<List<Dictionary<string, object>>>(File.ReadAllText(file)) ?? new List<Dictionary<string, object>>();
                 list.RemoveAll((x) => x.ContainsKey("id") && Convert.ToString(x["id"]) == id);
                 File.WriteAllText(file, ser.Serialize(list));
+                RemoveMcpFromPatch(id);
             }
             catch { }
         }
 
+        private static string McpPatchPath()
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "profiles", "web", "cordis.patch.yml");
+        }
+
+        private static string SanitizeServerName(string id)
+        {
+            string s = System.Text.RegularExpressions.Regex.Replace(id ?? "", "[^A-Za-z0-9_-]", "-");
+            if (s.Length > 32) s = s.Substring(0, 32);
+            return s.Length == 0 ? "mcp" : s;
+        }
+
+        private static void WriteMcpToPatch(Dictionary<string, object> mcp)
+        {
+            try
+            {
+                string patch = McpPatchPath();
+                if (!File.Exists(patch)) return;
+                string id = Convert.ToString(mcp.ContainsKey("id") ? mcp["id"] : "mcp");
+                string serverName = SanitizeServerName(id);
+                string command = mcp.ContainsKey("command") ? Convert.ToString(mcp["command"]) : "";
+                string argsRaw = mcp.ContainsKey("args") ? Convert.ToString(mcp["args"]) : "";
+                string[] args = argsRaw.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                string text = File.ReadAllText(patch);
+                // 移除旧块
+                text = System.Text.RegularExpressions.Regex.Replace(text, @"- insert:\r?\n\s+- id: mcp-" + System.Text.RegularExpressions.Regex.Escape(id) + @"[\s\S]*?(?=\r?\n- insert:|\r?\n\s*#|\z)", "");
+                string block =
+                    "- insert:\n" +
+                    "    - id: mcp-" + id + "\n" +
+                    "      name: '@deepseek-ai/dsh-mcp-client'\n" +
+                    "      config:\n" +
+                    "        transport: stdio\n" +
+                    "        serverName: " + serverName + "\n" +
+                    "        command: " + command + "\n" +
+                    "        args: [" + string.Join(", ", args) + "]\n";
+                text = text.TrimEnd() + "\n" + block;
+                File.WriteAllText(patch, text);
+            }
+            catch { }
+        }
+
+        private static void RemoveMcpFromPatch(string id)
+        {
+            try
+            {
+                string patch = McpPatchPath();
+                if (!File.Exists(patch)) return;
+                string text = File.ReadAllText(patch);
+                text = System.Text.RegularExpressions.Regex.Replace(text, @"- insert:\r?\n\s+- id: mcp-" + System.Text.RegularExpressions.Regex.Escape(id) + @"[\s\S]*?(?=\r?\n- insert:|\r?\n\s*#|\z)", "");
+                File.WriteAllText(patch, text);
+            }
+            catch { }
+        }
         private static void StartMcpProcess(string id)
         {
             try

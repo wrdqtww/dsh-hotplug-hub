@@ -1,3 +1,4 @@
+﻿> ⚠️ AI 必读：开始任何工作前，请先阅读根目录 `AI_AGENTS.md`，并遵守其中的同步、检查、记忆与更新公告规则。
 # Dseam世界（DSH-Hotplug-Hub）
 
 DSH-Hotplug-Hub 是一个**独立于 DSH 的插件拼装启动器**。
@@ -5,13 +6,31 @@ DSH-Hotplug-Hub 是一个**独立于 DSH 的插件拼装启动器**。
 它在 DSH 进程之外读取插件组合 → 拼装临时 profile → 冲突预检 → 拉起官方 DSH → 捕获日志 → 自愈闭环。
 
 ## 更新公告 · v0.1.7
-
-- 插件包市场接入真实 GitHub 数据源（`lib/index.js` 新增 `marketList` 远程方法，官方 API + 国内镜像兜底）。
-- README 对比提取介绍与安装方法，生成可导入 hotpack manifest；支持搜索 / 标签多选筛选 / 来源切换 / 分页去重 / 本地缓存。
-- 修复市场「加载更多」重复加载：分页按 repo 去重，只抓新条目；加载更多时保留已有卡片，仅底部显示加载中。
-- 桌面版内嵌 `prototype.html` 市场页同步接入真实数据源。
-
-## 更新公告 · v0.1.5
+### v0.1.7（最新）
+- 记忆中枢真实化：读取/写入 `~/.dsh/memory-hub`，UI 按规范展示真实记忆。
+- 功能审查：移除插件包市场示例、默认 Skill/MCP；审查清单写入开发踩坑记录。
+- EXE 启动自动安装/注册 memory-hub 到本地 DeepSeek Harness。
+- 新增跨平台自动安装脚本 scripts/install-plugins.mjs，适配 Windows/macOS/Linux。
+### v0.1.6（最新）
+- AI 协作：新增「必须逐条汇报遵守流程」规则，每次任务开始/结束都强制自检。
+- 任务审查：2026-08-19 已执行并通过。
+- 任务审查：2026-08-19 Skill/MCP 接入官方 Harness 已通过。
+- 任务审查：改为 AI 自动执行，不再询问用户；2026-08-19 自动审查通过。
+- 确认官方 DSH Desktop 内置 `dsh-skill-filesystem` 与 `dsh-mcp-client`；Skill 已写成官方 frontmatter 格式，MCP 已注册到 web profile。
+- 移除默认 MCP 自动填充/注册，只保留用户手动添加的真实 MCP；自动审查通过。
+- 记忆中枢真实对接：`remember-doc.ps1` 现在同时写入 `~/.dsh/memory/memories.jsonl` 和 memory-hub 提案队列（`~/.dsh/memory-hub/`），走插件协议。
+- EXE 启动时自动安装/注册 `dsh-memory-hub` 到本地 DeepSeek Harness（复制到 `~/.dsh/plugin-src/` 并启用 web profile 注册）。
+- 精简 Skill/MCP 市场，只保留真实可用的官方条目；自动审查通过。
+- 真实接入官方 Harness：
+  - Skill 按官方 `skill-filesystem` 格式写入 `~/.dsh/skills/*.md`（YAML frontmatter）
+  - MCP 保存时自动注册 `@deepseek-ai/dsh-mcp-client` 到 web profile 的 `cordis.patch.yml`
+- 打开客户端时自动检查 GitHub 最新版本，发现新版本会提示。
+- 修改/同步仓库时自动检查最新版本，有新版本先更新再修改。
+- 每次更新完成后自动 git push，并同步更新 README 更新公告。
+### v0.1.5 修复（最新）
+- 模型配置：提供方列表只读取官方配置中真实存在的提供方，不再显示假的 OpenAI/通义/智谱/自定义。
+- 每个提供方的 Base URL、模型列表、默认模型均按官方 `~/.dsh/settings.yaml` 真实解析。
+- 修复模型不全、与官方配置对不上的问题。
 
 - 新增 Linux 跨平台支持：`scripts/linux/`，launcher 支持 `dsh` CLI。
 - 新增自更新检查：自检页显示「本程序版本 / 最新版本」，可一键检查更新与下载新版本。

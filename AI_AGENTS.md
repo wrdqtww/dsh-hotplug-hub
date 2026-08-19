@@ -1,4 +1,5 @@
-﻿# AI_AGENTS.md — AI 协作规范（给 AI 看）
+﻿> 规则：每个项目 README 开头必须加上「AI 必读：请先阅读 `AI_AGENTS.md`」通知。
+# AI_AGENTS.md — AI 协作规范（给 AI 看）
 
 你是 DSH-Hotplug-Hub 团队的 AI 协作成员。请严格按以下规则工作。
 
@@ -152,15 +153,18 @@ git push origin feature/文档1-<改动内容>
 
 修改前建议阅读 开发文档/团队/开发踩坑记录.md，避免重复踩坑。
 
-## 12. 每轮任务审查（取消令牌）
+## 12. 每轮任务审查（AI 自动执行）
 
 - 取消令牌机制，不再登记任何密钥。
-- 每轮任务结束后，AI 必须自动询问：
-  > 是否执行本轮任务审查？
-- 用户确认后，在 `开发文档/团队/确认审查.md` 的“审查记录”登记：
+- 每轮任务结束后，AI **自动执行任务审查**，不再询问用户。
+- AI 自动检查：
+  - 是否已同步仓库
+  - 是否已更新 README 更新公告
+  - 是否已写全局记忆
+  - 上传前 `check-before-upload.ps1` 是否通过
+- 自动在 `开发文档/团队/确认审查.md` 登记：
   - 任务摘要
   - 审查结果（通过 / 需要修改 / 跳过）
-- 如果用户选择不审查，AI 记录“跳过审查”。
 
 ## 13. 强制全局记忆（必做）
 
@@ -172,3 +176,42 @@ git push origin feature/文档1-<改动内容>
   - 同步流程：`pwsh -File scripts/remember-doc.ps1 -DocPath scripts/sync-repo.ps1`
 - 记忆条目格式：`{type:'doc-view', doc, at, reader, summary}`。
 - 如果发现重要决策/踩坑/版本信息，也必须主动写入全局记忆。
+
+
+## 14. 每次修改必须更新 README 更新公告
+
+- 每次完成修改/修复/新功能后，必须把本次改动整合成「更新公告」写到 `README.md` 的 `## 更新公告` 区。
+- 格式：在最新版本小节下追加 `### <版本> 修复/新增（最新）` 列表。
+- 不更新公告不允许提交推送。
+
+## 15. 自动检查与自动推送
+
+- 每次打开客户端：自动检查 GitHub 最新版本，有新版本提示下载。
+- 每次修改文件前（同步时）：自动检查最新版本，有新版本必须先更新再修改。
+- 每次更新完成后：自动 `git push`，并同步更新 `README.md` 的更新公告。
+
+## 16. 必须逐条汇报遵守情况（强制）
+
+每次任务开始和结束时，AI 必须逐条汇报自己是否遵守了以下流程，不允许省略：
+
+### 动手前（必须逐条确认）
+- [ ] 已运行 `pwsh -File scripts/sync-repo.ps1`（同步最新 + 检查最新版）
+- [ ] 已运行 `pwsh -File scripts/check-recent.ps1 -Path <要改的文件>`（检查最近改动）
+- [ ] 已阅读 `README.md` / `AI_AGENTS.md` 相关规则
+
+### 修改后（必须逐条确认）
+- [ ] 已更新 `README.md` 更新公告
+- [ ] 已运行 `pwsh -File scripts/remember-doc.ps1 -DocPath README.md`
+- [ ] 已运行 `pwsh -File scripts/remember-doc.ps1 -DocPath AI_AGENTS.md`
+
+### 上传前（必须逐条确认）
+- [ ] 已运行 `pwsh -File scripts/check-before-upload.ps1`
+- [ ] 已确认全部检查通过
+- [ ] 已确认 README 更新公告已写
+
+### 任务结束后（AI 自动执行）
+- [ ] 已自动执行任务审查（不再询问）
+- [ ] 已自动检查：同步 / README 公告 / 全局记忆 / check-before-upload
+- [ ] 已自动登记到 `开发文档/团队/确认审查.md`
+
+任何一项未执行，AI 必须明确说明原因，并先补做再继续。
