@@ -1,9 +1,20 @@
-﻿# DSH-Hotplug-Hub
+﻿# Dseam世界（DSH-Hotplug-Hub）
 
 DSH-Hotplug-Hub 是一个**独立于 DSH 的插件拼装启动器**。
 
 它在 DSH 进程之外读取插件组合 → 拼装临时 profile → 冲突预检 → 拉起官方 DSH → 捕获日志 → 自愈闭环。
 
+## 更新公告 · v0.1.5
+
+- 新增 Linux 跨平台支持：`scripts/linux/`，launcher 支持 `dsh` CLI。
+- 新增自更新检查：自检页显示「本程序版本 / 最新版本」，可一键检查更新与下载新版本。
+- macOS / Linux / Windows 三端支持。
+
+
+- 新增 macOS 跨平台支持：`launcher` 可在 macOS 运行，提供 `.app` 壳脚本。
+- 修复 Windows 自检 pnpm 未检测到。
+- 新增跨平台规范：`开发文档/规范/跨平台支持规范.md`。
+- 团队协作/AI 协作文档同步更新。
 ## 仓库整理状态
 
 本仓库已经过整理，当前文件即为整理后的最终结构。
@@ -18,6 +29,7 @@ DSH-Hotplug-Hub 是一个**独立于 DSH 的插件拼装启动器**。
 - **冲突预检**：版本冲突、角色冲突、bundle↔cordis 重分类
 - **自愈**：错误分类 + 受限动作集（默认预览，`--yes` 写入建议）
 - **Windows 桌面 GUI**：WebView2 + C# WinForms
+- **macOS / Linux 支持**：Node 启动器 + `.app` / shell 壳 / dsh CLI
 - **官方 DSH 集成**：自动检测 / 手动选择 DSH Desktop
 - **API 模型配置**：直接读取官方 DSH 的 API 配置（`~/.dsh/settings.yaml` + `.credentials.yaml`）
 - **安装程序**：`installer/Setup.exe`，默认安装到 `C:\DSH-Hotplug-Hub`
@@ -95,3 +107,12 @@ Launcher：sandbox 同步为 ~/.dsh/profiles/<id>
 ## License
 
 MIT
+## 全局记忆
+
+- 重要内容必须写入 `~/.dsh/memory/memories.jsonl`。
+- 每次查看 README / AI_AGENTS / 检查流程后，执行：
+  ```powershell
+  pwsh -File scripts/remember-doc.ps1 -DocPath README.md
+  pwsh -File scripts/remember-doc.ps1 -DocPath AI_AGENTS.md
+  pwsh -File scripts/remember-doc.ps1 -DocPath scripts/check-before-upload.ps1
+  ```

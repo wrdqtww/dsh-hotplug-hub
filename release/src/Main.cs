@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -34,10 +34,12 @@ namespace DSHHotplugHub
     internal sealed class MainForm : Form
     {
         private readonly WebView2 webView = new WebView2();
+        private const string APP_VERSION = "0.1.5";
+        private const string PROJECT_REPO = "ARFCON/dsh-hotplug-hub";
 
         public MainForm()
         {
-            Text = "DSH 热插拔中枢 / DSH Hotplug Hub";
+            Text = "Dseam世界";
             Width = 1180;
             Height = 800;
             MinimumSize = new Size(900, 600);
@@ -46,7 +48,7 @@ namespace DSHHotplugHub
             catch { Icon = SystemIcons.Application; }
 
             webView.Dock = DockStyle.Fill;
-            webView.DefaultBackgroundColor = DshTheme.Bg; // 与 Web --bg 一致，避免加载瞬间白闪
+            webView.DefaultBackgroundColor = Color.White;
 
             Controls.Add(webView);
             Load += async delegate { await InitializeAsync(); };
@@ -94,7 +96,46 @@ namespace DSHHotplugHub
                         {
                             OpenOfficialDownloadPage();
                         }
-                        else if (message != null && message.StartsWith("ai:"))
+                        else if (message == "checkUpdate")
+                        {
+                            await webView.CoreWebView2.ExecuteScriptAsync(BuildNativeSelfCheckScript());
+                        }
+                        else if (message == "downloadProject")
+                        {
+                            OpenProjectDownloadPage();
+                        }
+                        else if (message == "listSkills")
+                        {
+                            await webView.CoreWebView2.ExecuteScriptAsync("window.__setSkills(" + GetSkillsJson() + ");");
+                        }
+                        else if (message != null && message.StartsWith("addSkill:"))
+                        {
+                            SaveSkillFile(message.Substring("addSkill:".Length));
+                            await webView.CoreWebView2.ExecuteScriptAsync("window.__setSkills(" + GetSkillsJson() + ");");
+                        }
+                        else if (message != null && message.StartsWith("deleteSkill:"))
+                        {
+                            DeleteSkillFile(message.Substring("deleteSkill:".Length));
+                            await webView.CoreWebView2.ExecuteScriptAsync("window.__setSkills(" + GetSkillsJson() + ");");
+                        }
+                        else if (message == "listMcp")
+                        {
+                            await webView.CoreWebView2.ExecuteScriptAsync("window.__setMcps(" + GetMcpsJson() + ");");
+                        }
+                        else if (message != null && message.StartsWith("addMcp:"))
+                        {
+                            SaveMcpFile(message.Substring("addMcp:".Length));
+                            await webView.CoreWebView2.ExecuteScriptAsync("window.__setMcps(" + GetMcpsJson() + ");");
+                        }
+                        else if (message != null && message.StartsWith("deleteMcp:"))
+                        {
+                            DeleteMcpFile(message.Substring("deleteMcp:".Length));
+                            await webView.CoreWebView2.ExecuteScriptAsync("window.__setMcps(" + GetMcpsJson() + ");");
+                        }
+                        else if (message != null && message.StartsWith("startMcp:"))
+                        {
+                            StartMcpProcess(message.Substring("startMcp:".Length));
+                        }                        else if (message != null && message.StartsWith("ai:"))
                         {
                             await HandleAiRequestAsync(message.Substring(3));
                         }
@@ -112,6 +153,7 @@ namespace DSHHotplugHub
                         {
                             await webView.CoreWebView2.ExecuteScriptAsync(BuildNativeSelfCheckScript());
                             await webView.CoreWebView2.ExecuteScriptAsync(BuildApiIntegrationScript());
+                            await webView.CoreWebView2.ExecuteScriptAsync("window.__setSkills=function(d){window.__skillsData=d||[];if(typeof renderSkills==='function')renderSkills();};window.__setMcps=function(d){window.__mcpsData=d||[];if(typeof renderMcp==='function')renderMcp();};window.chrome.webview.postMessage('listSkills');window.chrome.webview.postMessage('listMcp');");
                         }
                     }
                     catch
@@ -127,7 +169,7 @@ namespace DSHHotplugHub
             }
             catch (Exception ex)
             {
-                MessageBox.Show("WebView2 初始化失败：\n" + ex.Message, "DSH 热插拔中枢",
+                MessageBox.Show("WebView2 初始化失败：\n" + ex.Message, "Dseam世界",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -150,16 +192,15 @@ namespace DSHHotplugHub
         // 左侧栏底部版本信息上方注入居中启动按钮；同时补上原型缺失的 .hidden 规则，让左侧导航真正切换视图
         private static string InjectSidebarLaunchButton(string html)
         {
-            // 注入样式直接引用页面 :root 令牌（var(--teal) 等），与 prototype.html 单一配色源保持一致
             string style = "<style>" +
                 ".hidden { display: none !important; }" +
                 ".side-launch { margin: 4px 0 12px; text-align: center; }" +
                 ".side-launch .launch-btn {" +
-                " width: 100%; padding: 10px 12px; border: 0; border-radius: var(--rad);" +
-                " background: var(--teal); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;" +
+                " width: 100%; padding: 10px 12px; border: 0; border-radius: 8px;" +
+                " background: #0e7c6b; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;" +
                 " }" +
-                ".side-launch .launch-btn:hover { background: var(--teal-hover); }" +
-                ".side-launch .launch-btn.secondary { background: transparent; border: 1px solid rgba(255,255,255,0.35); color: var(--sidebar-ink); margin-top: 8px; }" +
+                ".side-launch .launch-btn:hover { background: #0a6a5c; }" +
+                ".side-launch .launch-btn.secondary { background: transparent; border: 1px solid rgba(255,255,255,0.35); color: #e7f0ec; margin-top: 8px; }" +
                 ".side-launch .launch-btn.secondary:hover { background: rgba(255,255,255,0.08); }" +
                 "</style>";
 
@@ -181,16 +222,17 @@ namespace DSHHotplugHub
         private static string BuildNativeSelfCheckScript()
         {
             string node = RunCli("node", "--version");
-            string pnpm = RunCli("pnpm", "--version");
+            string pnpm = GetPnpmVersion();
             string dshDesktop = FindOfficialHarness();
-            string dshVersion = null;
-            if (dshDesktop != null)
+            string dshVersion = GetDshCoreVersion();
+            if (string.IsNullOrEmpty(dshVersion) && dshDesktop != null)
             {
                 try { dshVersion = FileVersionInfo.GetVersionInfo(dshDesktop).FileVersion; } catch { }
             }
             string wv = null;
             try { wv = CoreWebView2Environment.GetAvailableBrowserVersionString(); } catch { }
             string profiles = DetectProfiles();
+            string latest = GetLatestReleaseVersion();
 
             string js =
                 "window.__nativeSelfCheck={" +
@@ -199,8 +241,11 @@ namespace DSHHotplugHub
                 "dshDesktop:" + JsString(dshDesktop) + "," +
                 "dshVersion:" + JsString(dshVersion) + "," +
                 "webview2:" + JsString(wv) + "," +
-                "profiles:" + JsString(profiles) +
+                "profiles:" + JsString(profiles) + "," +
+                "appVersion:" + JsString(APP_VERSION) + "," +
+                "latestVersion:" + JsString(latest) +
                 "};" +
+                "if(window.__nativeSelfCheck.dshVersion){state.dshVersion=window.__nativeSelfCheck.dshVersion;state.latestVersion=window.__nativeSelfCheck.dshVersion;if(typeof renderShell==='function')renderShell();}" +
                 "(function(){var o=getChecks;getChecks=function(){var r=o();" +
                 "for(var i=0;i<r.length;i++){" +
                 "if(r[i].name==='Node.js'){r[i].val=window.__nativeSelfCheck.node||'未检测到';r[i].text=window.__nativeSelfCheck.node?'已检测':'未安装';r[i].status=window.__nativeSelfCheck.node?'ok':'err';}" +
@@ -210,9 +255,12 @@ namespace DSHHotplugHub
                 "if(window.__nativeSelfCheck.webview2){r.push({name:'WebView2',desc:'桌面渲染内核',val:window.__nativeSelfCheck.webview2,status:'ok',text:'可用'});}" +
                 "if(window.__nativeSelfCheck.profiles){r.push({name:'本地 DSH Profile',desc:'~/.dsh/profiles 探测',val:window.__nativeSelfCheck.profiles,status:'ok',text:'已探测'});}" +
                 "if(window.__nativeSelfCheck.dshDesktop){r.push({name:'官方 Harness 路径',desc:'当前启动器',val:window.__nativeSelfCheck.dshDesktop,status:'ok',text:'已选择'});}" +
+                "if(window.__nativeSelfCheck.appVersion){r.push({name:'本程序版本',desc:'当前安装版本',val:window.__nativeSelfCheck.appVersion,status:'ok',text:'v'+window.__nativeSelfCheck.appVersion});}" +
+                "if(window.__nativeSelfCheck.latestVersion){r.push({name:'最新版本',desc:'GitHub 最新发布',val:window.__nativeSelfCheck.latestVersion,status:window.__nativeSelfCheck.latestVersion===window.__nativeSelfCheck.appVersion?'ok':'warn',text:window.__nativeSelfCheck.latestVersion===window.__nativeSelfCheck.appVersion?'已是最新':'可更新'});}" +
                 "return r;};" +
                 "if(typeof renderCheck==='function'){renderCheck();}" +
                 "var drs=document.querySelectorAll('.check-row');for(var i=0;i<drs.length;i++){var dn=drs[i].querySelector('.name');if(dn&&dn.textContent==='DSH 版本'){var db=document.createElement('button');db.className='btn sm primary';db.style.marginLeft='8px';db.textContent='⬇ 下载官方客户端';db.onclick=function(){if(window.chrome&&window.chrome.webview){window.chrome.webview.postMessage('downloadHarness');}};drs[i].appendChild(db);}}" +
+                "var urs=document.querySelectorAll('.check-row');for(var i=0;i<urs.length;i++){var un=urs[i].querySelector('.name');if(un&&un.textContent==='本程序版本'){var b1=document.createElement('button');b1.className='btn sm primary';b1.style.marginLeft='8px';b1.textContent='检查更新';b1.onclick=function(){if(window.chrome&&window.chrome.webview){window.chrome.webview.postMessage('checkUpdate');}};var b2=document.createElement('button');b2.className='btn sm';b2.style.marginLeft='8px';b2.textContent='下载新版本';b2.onclick=function(){if(window.chrome&&window.chrome.webview){window.chrome.webview.postMessage('downloadProject');}};urs[i].appendChild(b1);urs[i].appendChild(b2);}}" +
                 "var rc=document.getElementById('recheck');if(rc){rc.addEventListener('click',function(){if(window.chrome&&window.chrome.webview){window.chrome.webview.postMessage('recheck');}});}" +
                 "})();";
             return js;
@@ -246,6 +294,30 @@ namespace DSHHotplugHub
             }
         }
 
+        // pnpm 在 Windows 下通常是 pnpm.ps1 / pnpm.cmd，直接 spawn "pnpm" 会失败，这里做多路探测
+        private static string GetPnpmVersion()
+        {
+            // 1) 通过 cmd.exe 解析 pnpm（能识别 PATH 里的 pnpm.cmd / pnpm.ps1）
+            string v = RunCli("cmd.exe", "/c pnpm --version");
+            if (!string.IsNullOrEmpty(v)) return v;
+
+            // 2) 直接尝试 pnpm.cmd
+            v = RunCli("pnpm.cmd", "--version");
+            if (!string.IsNullOrEmpty(v)) return v;
+
+            // 3) 常见 npm 全局目录
+            string known = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "npm", "pnpm.cmd");
+            if (File.Exists(known))
+            {
+                v = RunCli(known, "--version");
+                if (!string.IsNullOrEmpty(v)) return v;
+            }
+
+            return null;
+        }
+
         private static string DetectProfiles()
         {
             try
@@ -276,14 +348,14 @@ namespace DSHHotplugHub
             {
                 DialogResult choose = MessageBox.Show(
                     "未找到官方 DSH 桌面端（DSH Desktop / DeepSeek Harness）。\n\n是否手动选择 DSH 桌面端启动程序？",
-                    "DSH 热插拔中枢", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    "Dseam世界", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (choose == DialogResult.Yes)
                 {
                     harnessPath = ChooseHarnessManually();
                 }
                 if (harnessPath == null)
                 {
-                    MessageBox.Show("未选择官方 DSH 桌面端。", "DSH 热插拔中枢",
+                    MessageBox.Show("未选择官方 DSH 桌面端。", "Dseam世界",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
@@ -309,7 +381,7 @@ namespace DSHHotplugHub
             }
             catch (Exception ex)
             {
-                MessageBox.Show("启动官方 DSH 桌面端失败：\n" + ex.Message, "DSH 热插拔中枢",
+                MessageBox.Show("启动官方 DSH 桌面端失败：\n" + ex.Message, "Dseam世界",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -338,9 +410,81 @@ namespace DSHHotplugHub
             }
             catch (Exception ex)
             {
-                MessageBox.Show("打开官方下载页失败：\n" + ex.Message, "DSH 热插拔中枢",
+                MessageBox.Show("打开官方下载页失败：\n" + ex.Message, "Dseam世界",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
+        }
+
+        private static void OpenProjectDownloadPage()
+        {
+            try
+            {
+                Process.Start("https://github.com/" + PROJECT_REPO + "/releases/latest");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("打开项目下载页失败：\n" + ex.Message, "Dseam世界",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private static string GetLatestReleaseVersion()
+        {
+            try
+            {
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create("https://api.github.com/repos/" + PROJECT_REPO + "/releases/latest");
+                request.Method = "GET";
+                request.UserAgent = "DSH-Hotplug-Hub";
+                request.Accept = "application/vnd.github+json";
+                request.Timeout = 15000;
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                {
+                    string json = reader.ReadToEnd();
+                    JavaScriptSerializer ser = new JavaScriptSerializer();
+                    Dictionary<string, object> root = ser.Deserialize<Dictionary<string, object>>(json);
+                    if (root != null && root.ContainsKey("tag_name"))
+                    {
+                        string tag = Convert.ToString(root["tag_name"]);
+                        return tag.TrimStart('v');
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return null;
+        }
+
+        // 读取官方 DSH Desktop 内置的核心 dsh 版本（resources/app/package.json 的 @deepseek-ai/dsh）
+        private static string GetDshCoreVersion()
+        {
+            try
+            {
+                string appDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Programs", "DSH Desktop", "resources", "app");
+                string pkg = Path.Combine(appDir, "package.json");
+                if (!File.Exists(pkg)) return null;
+                JavaScriptSerializer ser = new JavaScriptSerializer();
+                Dictionary<string, object> root = ser.Deserialize<Dictionary<string, object>>(File.ReadAllText(pkg));
+                if (root != null && root.ContainsKey("dependencies"))
+                {
+                    Dictionary<string, object> deps = root["dependencies"] as Dictionary<string, object>;
+                    if (deps != null && deps.ContainsKey("@deepseek-ai/dsh"))
+                    {
+                        return Convert.ToString(deps["@deepseek-ai/dsh"]);
+                    }
+                }
+                if (root != null && root.ContainsKey("version"))
+                {
+                    return Convert.ToString(root["version"]);
+                }
+            }
+            catch
+            {
+            }
+            return null;
         }
 
         private static string FindOfficialHarness()
@@ -583,96 +727,208 @@ namespace DSHHotplugHub
             catch
             {
             }
-        }
-
-        private static void ShowApiConfigDialog()
+        }        private static void ShowApiConfigDialog()
         {
             ApiConfig cfg = LoadApiConfig();
-            string keyMasked = string.IsNullOrEmpty(cfg.apiKey)
-                ? "未配置"
-                : cfg.apiKey.Length > 8
-                    ? cfg.apiKey.Substring(0, 4) + "****" + cfg.apiKey.Substring(cfg.apiKey.Length - 4)
-                    : "****";
-
             using (Form dlg = new Form())
             {
-                dlg.Text = "DSH API 配置（官方）";
-                dlg.Width = 560;
-                dlg.Height = 320;
+                dlg.Text = "模型";
+                dlg.Width = 760;
+                dlg.Height = 480;
                 dlg.StartPosition = FormStartPosition.CenterParent;
                 dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
                 dlg.MaximizeBox = false;
                 dlg.MinimizeBox = false;
-                dlg.Font = DshTheme.UiFont;
-                dlg.BackColor = DshTheme.Panel;   // --panel
-                dlg.ForeColor = DshTheme.Ink;     // --ink
+                dlg.Font = new Font("Microsoft YaHei UI", 9F);
 
-                Label info = new Label();
-                info.Text =
-                    "本程序直接使用官方 DSH 的 API 配置：\r\n\r\n" +
-                    "Provider : " + cfg.provider + "\r\n" +
-                    "Model    : " + cfg.defaultModel + "\r\n" +
-                    "Base URL : " + cfg.baseUrl + "\r\n" +
-                    "API Key  : " + keyMasked + "\r\n\r\n" +
-                    "请在官方 DSH Desktop 的模型设置中修改 API 配置，\r\n" +
-                    "修改后点击“重新读取”即可生效。";
-                info.SetBounds(20, 16, 500, 160);
-                info.ForeColor = DshTheme.Ink; // --ink
+                Label lProviders = new Label(); lProviders.Text = "AI 服务提供方"; lProviders.SetBounds(16, 14, 140, 24);
+                ListBox lstProviders = new ListBox();
+                lstProviders.SetBounds(16, 42, 200, 320);
+                lstProviders.Items.AddRange(LoadProviderIds());
 
-                Button refresh = new Button();
-                refresh.Text = "重新读取";
-                refresh.SetBounds(20, 200, 110, 32);
-                refresh.Click += delegate
+                Label lName = new Label(); lName.Text = "名称"; lName.SetBounds(240, 42, 100, 24);
+                TextBox txtName = new TextBox(); txtName.SetBounds(340, 40, 380, 26);
+
+                Label lUrl = new Label(); lUrl.Text = "Base URL"; lUrl.SetBounds(240, 78, 100, 24);
+                TextBox txtUrl = new TextBox(); txtUrl.Text = cfg.baseUrl; txtUrl.SetBounds(340, 76, 380, 26);
+
+                Label lKey = new Label(); lKey.Text = "API Key"; lKey.SetBounds(240, 114, 100, 24);
+                TextBox txtKey = new TextBox(); txtKey.Text = cfg.apiKey; txtKey.UseSystemPasswordChar = true; txtKey.SetBounds(340, 112, 380, 26);
+
+                Label lModels = new Label(); lModels.Text = "模型列表"; lModels.SetBounds(240, 150, 100, 24);
+                TextBox txtModels = new TextBox(); txtModels.Text = cfg.models; txtModels.SetBounds(340, 148, 380, 26);
+
+                Label lDefault = new Label(); lDefault.Text = "默认模型"; lDefault.SetBounds(240, 186, 100, 24);
+                ComboBox cboDefault = new ComboBox(); cboDefault.DropDownStyle = ComboBoxStyle.DropDown;
+                cboDefault.Items.AddRange(cfg.models.Split(','));
+                cboDefault.Text = cfg.defaultModel; cboDefault.SetBounds(340, 184, 380, 26);
+
+                lstProviders.SelectedIndexChanged += delegate
                 {
-                    cfg = LoadApiConfig();
-                    keyMasked = string.IsNullOrEmpty(cfg.apiKey)
-                        ? "未配置"
-                        : cfg.apiKey.Length > 8
-                            ? cfg.apiKey.Substring(0, 4) + "****" + cfg.apiKey.Substring(cfg.apiKey.Length - 4)
-                            : "****";
-                    info.Text =
-                        "本程序直接使用官方 DSH 的 API 配置：\r\n\r\n" +
-                        "Provider : " + cfg.provider + "\r\n" +
-                        "Model    : " + cfg.defaultModel + "\r\n" +
-                        "Base URL : " + cfg.baseUrl + "\r\n" +
-                        "API Key  : " + keyMasked + "\r\n\r\n" +
-                        "请在官方 DSH Desktop 的模型设置中修改 API 配置，\r\n" +
-                        "修改后点击“重新读取”即可生效。";
+                    if (lstProviders.SelectedItem == null) return;
+                    string id = lstProviders.SelectedItem.ToString();
+                    ApiConfig p = LoadProviderConfig(id);
+                    if (p == null) return;
+                    txtName.Text = id;
+                    txtUrl.Text = p.baseUrl;
+                    txtKey.Text = p.apiKey;
+                    txtModels.Text = p.models;
+                    cboDefault.Items.Clear();
+                    cboDefault.Items.AddRange(p.models.Split(','));
+                    cboDefault.Text = p.defaultModel;
                 };
 
-                Button openDir = new Button();
-                openDir.Text = "打开配置目录";
-                openDir.SetBounds(140, 200, 120, 32);
-                openDir.Click += delegate
+                Button btnAdd = new Button(); btnAdd.Text = "＋ 添加提供方"; btnAdd.SetBounds(16, 372, 200, 30);
+                btnAdd.Click += delegate
                 {
-                    try
+                    string id = "provider-" + DateTime.Now.Ticks.ToString("x");
+                    lstProviders.Items.Add(id);
+                    lstProviders.SelectedItem = id;
+                };
+
+                Button btnDel = new Button(); btnDel.Text = "删除提供方"; btnDel.SetBounds(16, 408, 200, 30);
+                btnDel.Click += delegate
+                {
+                    if (lstProviders.SelectedItem != null)
                     {
-                        string dshDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh");
-                        if (Directory.Exists(dshDir)) Process.Start("explorer.exe", dshDir);
-                    }
-                    catch
-                    {
+                        DeleteProviderFile(lstProviders.SelectedItem.ToString());
+                        lstProviders.Items.Remove(lstProviders.SelectedItem);
                     }
                 };
 
-                Button launch = new Button();
-                launch.Text = "启动官方 DSH 配置";
-                launch.SetBounds(270, 200, 140, 32);
-                launch.BackColor = DshTheme.Teal;      // 与 .btn.primary 语义一致
-                launch.ForeColor = Color.White;
-                launch.FlatStyle = FlatStyle.Flat;
-                launch.Click += delegate { LaunchOfficialHarness(); };
+                Button btnTest = new Button(); btnTest.Text = "测试连接"; btnTest.SetBounds(340, 240, 110, 30);
+                btnTest.Click += delegate
+                {
+                    ApiConfig t = new ApiConfig();
+                    t.baseUrl = txtUrl.Text.Trim();
+                    t.apiKey = txtKey.Text.Trim();
+                    t.defaultModel = cboDefault.Text.Trim();
+                    t.models = txtModels.Text.Trim();
+                    string err;
+                    bool ok = TestApiConnection(t, out err);
+                    MessageBox.Show(ok ? "连接成功 ✅" : "连接失败 ❌\n" + err, "Dseam世界 模型测试",
+                        MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                };
 
-                Button close = new Button();
-                close.Text = "关闭";
-                close.SetBounds(420, 200, 80, 32);
-                close.Click += delegate { dlg.Close(); };
+                Button btnSave = new Button(); btnSave.Text = "保存"; btnSave.BackColor = Color.FromArgb(14,124,107); btnSave.ForeColor = Color.White; btnSave.FlatStyle = FlatStyle.Flat; btnSave.SetBounds(340, 280, 120, 30);
+                btnSave.Click += delegate
+                {
+                    cfg.provider = txtName.Text.Trim();
+                    cfg.baseUrl = txtUrl.Text.Trim();
+                    cfg.apiKey = txtKey.Text.Trim();
+                    cfg.models = txtModels.Text.Trim();
+                    cfg.defaultModel = cboDefault.Text.Trim();
+                    if (cfg.defaultModel.Length == 0 && cfg.models.Length > 0) cfg.defaultModel = cfg.models.Split(',')[0].Trim();
+                    SaveApiConfig(cfg);
+                    SaveProviderToOfficial(cfg);
+                    SyncApiConfigToOfficialDesktop(cfg);
+                    MessageBox.Show("已保存并同步到官方 DSH。", "模型", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                };
 
-                dlg.Controls.AddRange(new Control[] { info, refresh, openDir, launch, close });
+                Button btnClose = new Button(); btnClose.Text = "关闭"; btnClose.SetBounds(470, 280, 80, 30);
+                btnClose.Click += delegate { dlg.Close(); };
+
+                dlg.Controls.AddRange(new Control[] { lProviders, lstProviders, lName, txtName, lUrl, txtUrl, lKey, txtKey, lModels, txtModels, lDefault, cboDefault, btnAdd, btnDel, btnTest, btnSave, btnClose });
                 dlg.ShowDialog();
             }
         }
 
+        private static string[] LoadProviderIds()
+        {
+            string[] defaults = new string[] { "DeepSeek 官方", "OpenAI 兼容", "通义千问", "智谱", "自定义" };
+            try
+            {
+                string settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "settings.yaml");
+                if (!File.Exists(settings)) return defaults;
+                string yaml = File.ReadAllText(settings);
+                int idx = yaml.IndexOf("llm-pi-ai:");
+                if (idx < 0) return defaults;
+                int prov = yaml.IndexOf("providers:", idx);
+                if (prov < 0) return defaults;
+                string block = yaml.Substring(prov);
+                List<string> ids = new List<string>();
+                foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(block, @"^\s{4}([a-zA-Z0-9_-]+):", System.Text.RegularExpressions.RegexOptions.Multiline))
+                {
+                    if (ids.Count >= 20) break;
+                    ids.Add(m.Groups[1].Value);
+                }
+                if (ids.Count == 0) return defaults;
+                return ids.ToArray();
+            }
+            catch { return defaults; }
+        }
+
+        private static ApiConfig LoadProviderConfig(string id)
+        {
+            ApiConfig cfg = new ApiConfig();
+            cfg.provider = id;
+            cfg.baseUrl = "https://api.deepseek.com/v1";
+            cfg.models = "deepseek-chat,deepseek-reasoner";
+            cfg.defaultModel = "deepseek-chat";
+            try
+            {
+                string cred = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", ".credentials.yaml");
+                if (File.Exists(cred))
+                {
+                    string keyName = ProviderKeyName(id);
+                    foreach (string line in File.ReadAllLines(cred))
+                    {
+                        if (line.StartsWith(keyName + ":"))
+                        {
+                            cfg.apiKey = line.Substring(line.IndexOf(':') + 1).Trim();
+                            break;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return cfg;
+        }
+
+        private static string ProviderKeyName(string id)
+        {
+            if (id.Contains("DeepSeek") || id.Contains("deepseek")) return "DEEPSEEK_API_KEY";
+            if (id.Contains("OpenAI") || id.Contains("openai")) return "OPENAI_API_KEY";
+            if (id.Contains("通义") || id.Contains("dashscope")) return "DASHSCOPE_API_KEY";
+            if (id.Contains("智谱") || id.Contains("zhipu")) return "ZHIPU_API_KEY";
+            return id.ToUpperInvariant().Replace('-', '_') + "_API_KEY";
+        }
+
+        private static void DeleteProviderFile(string id)
+        {
+            try
+            {
+                string settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "settings.yaml");
+                if (!File.Exists(settings)) return;
+                string yaml = File.ReadAllText(settings);
+                string pattern = @"\n\s{4}" + System.Text.RegularExpressions.Regex.Escape(id) + @":[\s\S]*?(?=\n\s{4}[a-zA-Z0-9_-]+:|\n\s{2}[a-zA-Z0-9_-]+:|\z)";
+                yaml = System.Text.RegularExpressions.Regex.Replace(yaml, pattern, "");
+                File.WriteAllText(settings, yaml);
+            }
+            catch { }
+        }
+
+        private static void SaveProviderToOfficial(ApiConfig cfg)
+        {
+            try
+            {
+                string cred = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", ".credentials.yaml");
+                string keyName = ProviderKeyName(cfg.provider);
+                string keyLine = keyName + ": " + cfg.apiKey;
+                string credText = File.Exists(cred) ? File.ReadAllText(cred) : "";
+                if (credText.Contains(keyName + ":"))
+                {
+                    string[] lines = credText.Replace("\r\n", "\n").Split('\n');
+                    for (int i = 0; i < lines.Length; i++) if (lines[i].StartsWith(keyName + ":")) lines[i] = keyLine;
+                    File.WriteAllText(cred, string.Join(Environment.NewLine, lines));
+                }
+                else
+                {
+                    File.AppendAllText(cred, (credText.Length == 0 || credText.EndsWith("\n") ? "" : Environment.NewLine) + keyLine + Environment.NewLine);
+                }
+            }
+            catch { }
+        }
         private static void SyncApiConfigToOfficialDesktop(ApiConfig cfg)
         {
             try
@@ -733,6 +989,7 @@ namespace DSHHotplugHub
                 "(function(){var ensureModelSelect=function(){" +
                 "var composeBtn=document.getElementById('composeBtn');" +
                 "if(!composeBtn||document.getElementById('aiModelSelect'))return;" +
+                "var status=document.createElement('div');status.style.cssText='margin:8px 0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--rad);background:var(--panel);cursor:pointer;';status.innerHTML='⚙ 当前模型：<b>'+(window.__apiConfig.defaultModel||'未知')+'</b>（点击配置）';status.onclick=function(){if(window.chrome&&window.chrome.webview){window.chrome.webview.postMessage('openApiConfig');}};composeBtn.parentNode.insertBefore(status,composeBtn);" +
                 "var wrap=document.createElement('div');wrap.style.cssText='margin:10px 0;display:flex;align-items:center;gap:8px;';" +
                 "wrap.innerHTML='模型: ';" +
                 "var sel=document.createElement('select');sel.id='aiModelSelect';" +
@@ -782,6 +1039,176 @@ namespace DSHHotplugHub
             }
         }
 
+        // ---------- Skill / MCP 真实文件管理 ----------
+
+        private static string SkillsDir()
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "skills");
+        }
+
+        private static string McpFilePath()
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "mcp.json");
+        }
+
+        private static string GetSkillsJson()
+        {
+            try
+            {
+                string dir = SkillsDir();
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                if (Directory.GetFiles(dir, "*.md").Length == 0)
+                {
+                    File.WriteAllText(Path.Combine(dir, "skill-deep-research.md"), "# DeepSeek 深度研究\n\n多轮推理与资料整理\n");
+                    File.WriteAllText(Path.Combine(dir, "skill-code-review.md"), "# 代码审查\n\n代码质量与安全审查\n");
+                }
+                List<Dictionary<string, object>> list = new List<Dictionary<string, object>>();
+                foreach (string file in Directory.GetFiles(dir, "*.md"))
+                {
+                    string id = Path.GetFileNameWithoutExtension(file);
+                    string firstLine = "";
+                    try { firstLine = File.ReadAllLines(file)[0].TrimStart('#', ' ', '\t'); } catch { }
+                    Dictionary<string, object> item = new Dictionary<string, object>();
+                    item["id"] = id;
+                    item["name"] = string.IsNullOrEmpty(firstLine) ? id : firstLine;
+                    item["enabled"] = true;
+                    item["desc"] = "本地 Skill";
+                    list.Add(item);
+                }
+                return new JavaScriptSerializer().Serialize(list);
+            }
+            catch { return "[]"; }
+        }
+
+        private static void SaveSkillFile(string payload)
+        {
+            try
+            {
+                JavaScriptSerializer ser = new JavaScriptSerializer();
+                Dictionary<string, object> data = ser.Deserialize<Dictionary<string, object>>(payload);
+                string name = data != null && data.ContainsKey("name") ? Convert.ToString(data["name"]) : "skill";
+                string id = "skill-" + DateTime.Now.Ticks.ToString("x");
+                string dir = SkillsDir();
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, id + ".md"), "# " + name + "\n\n" + (data != null && data.ContainsKey("desc") ? Convert.ToString(data["desc"]) : "") + "\n");
+            }
+            catch { }
+        }
+
+        private static void DeleteSkillFile(string id)
+        {
+            try
+            {
+                string file = Path.Combine(SkillsDir(), id + ".md");
+                if (File.Exists(file)) File.Delete(file);
+            }
+            catch { }
+        }
+
+        private static string GetMcpsJson()
+        {
+            try
+            {
+                string file = McpFilePath();
+                if (!File.Exists(file))
+                {
+                    List<Dictionary<string, object>> defaults = new List<Dictionary<string, object>>();
+                    Dictionary<string, object> fs = new Dictionary<string, object>();
+                    fs["id"] = "mcp-filesystem"; fs["name"] = "Filesystem MCP"; fs["command"] = "npx"; fs["args"] = "-y @modelcontextprotocol/server-filesystem";
+                    Dictionary<string, object> fetch = new Dictionary<string, object>();
+                    fetch["id"] = "mcp-fetch"; fetch["name"] = "Fetch MCP"; fetch["command"] = "npx"; fetch["args"] = "-y @modelcontextprotocol/server-fetch";
+                    defaults.Add(fs); defaults.Add(fetch);
+                    Directory.CreateDirectory(Path.GetDirectoryName(file));
+                    File.WriteAllText(file, new JavaScriptSerializer().Serialize(defaults));
+                }
+                return File.ReadAllText(file);
+            }
+            catch { return "[]"; }
+        }
+
+        private static void SaveMcpFile(string payload)
+        {
+            try
+            {
+                JavaScriptSerializer ser = new JavaScriptSerializer();
+                Dictionary<string, object> mcp = ser.Deserialize<Dictionary<string, object>>(payload);
+                if (mcp == null) return;
+                string file = McpFilePath();
+                List<Dictionary<string, object>> list = new List<Dictionary<string, object>>();
+                if (File.Exists(file)) list = ser.Deserialize<List<Dictionary<string, object>>>(File.ReadAllText(file)) ?? new List<Dictionary<string, object>>();
+                if (!mcp.ContainsKey("id") || mcp["id"] == null) mcp["id"] = "mcp-" + DateTime.Now.Ticks.ToString("x");
+                string id = Convert.ToString(mcp["id"]);
+                int idx = list.FindIndex((x) => x.ContainsKey("id") && Convert.ToString(x["id"]) == id);
+                if (idx >= 0) list[idx] = mcp; else list.Add(mcp);
+                Directory.CreateDirectory(Path.GetDirectoryName(file));
+                File.WriteAllText(file, ser.Serialize(list));
+            }
+            catch { }
+        }
+
+        private static void DeleteMcpFile(string id)
+        {
+            try
+            {
+                string file = McpFilePath();
+                if (!File.Exists(file)) return;
+                JavaScriptSerializer ser = new JavaScriptSerializer();
+                List<Dictionary<string, object>> list = ser.Deserialize<List<Dictionary<string, object>>>(File.ReadAllText(file)) ?? new List<Dictionary<string, object>>();
+                list.RemoveAll((x) => x.ContainsKey("id") && Convert.ToString(x["id"]) == id);
+                File.WriteAllText(file, ser.Serialize(list));
+            }
+            catch { }
+        }
+
+        private static void StartMcpProcess(string id)
+        {
+            try
+            {
+                string file = McpFilePath();
+                if (!File.Exists(file)) return;
+                JavaScriptSerializer ser = new JavaScriptSerializer();
+                List<Dictionary<string, object>> list = ser.Deserialize<List<Dictionary<string, object>>>(File.ReadAllText(file)) ?? new List<Dictionary<string, object>>();
+                Dictionary<string, object> mcp = list.Find((x) => x.ContainsKey("id") && Convert.ToString(x["id"]) == id);
+                if (mcp == null) return;
+                string command = mcp.ContainsKey("command") ? Convert.ToString(mcp["command"]) : "";
+                string args = mcp.ContainsKey("args") ? Convert.ToString(mcp["args"]) : "";
+                if (string.IsNullOrEmpty(command)) return;
+                Process.Start(new ProcessStartInfo(command, args) { UseShellExecute = false, CreateNoWindow = true });
+            }
+            catch { }
+        }
+        private static bool TestApiConnection(ApiConfig cfg, out string error)
+        {
+            error = "";
+            try
+            {
+                string endpoint = (cfg.baseUrl.TrimEnd('/')) + "/chat/completions";
+                string body = "{\"model\":" + JsString(cfg.defaultModel) +
+                    ",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":1}";
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(endpoint);
+                request.Method = "POST";
+                request.ContentType = "application/json";
+                request.Accept = "application/json";
+                request.Headers["Authorization"] = "Bearer " + cfg.apiKey;
+                request.Timeout = 15000;
+                byte[] data = Encoding.UTF8.GetBytes(body);
+                request.ContentLength = data.Length;
+                using (Stream stream = request.GetRequestStream()) { stream.Write(data, 0, data.Length); }
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                {
+                    using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                    {
+                        reader.ReadToEnd();
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
         private string CallLlm(string userText, string model, ApiConfig cfg)
         {
             try
@@ -838,26 +1265,5 @@ namespace DSHHotplugHub
 
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
-    }
-
-    // ---- 设计令牌（与 dsh-pack-hub/prototype.html :root 保持同值；禁止另发明色值）----
-    // 唯一权威色表见 开发文档/DSH-统一UI开发标准.md §2.1
-    internal static class DshTheme
-    {
-        public static readonly Color Teal = Color.FromArgb(14, 124, 107);        // --teal
-        public static readonly Color TealDark = Color.FromArgb(15, 47, 42);      // --teal-dark
-        public static readonly Color TealSoft = Color.FromArgb(220, 238, 234);   // --teal-soft
-        public static readonly Color TealHover = Color.FromArgb(10, 106, 92);    // --teal-hover
-        public static readonly Color Bg = Color.FromArgb(241, 242, 236);         // --bg
-        public static readonly Color Panel = Color.FromArgb(255, 254, 249);      // --panel
-        public static readonly Color Ink = Color.FromArgb(23, 32, 29);           // --ink
-        public static readonly Color Muted = Color.FromArgb(102, 115, 110);      // --muted
-        public static readonly Color Line = Color.FromArgb(217, 221, 212);       // --line
-        public static readonly Color SidebarInk = Color.FromArgb(231, 240, 236); // --sidebar-ink
-        public static readonly Color Green = Color.FromArgb(26, 127, 75);        // --green
-        public static readonly Color Amber = Color.FromArgb(180, 83, 9);         // --amber
-        public static readonly Color Red = Color.FromArgb(179, 38, 30);          // --red
-        public static readonly Color SurfaceDark = Color.FromArgb(16, 36, 31);   // --surface-dark
-        public static readonly Font UiFont = new Font("Microsoft YaHei UI", 9F); // --font-sans 对应
     }
 }

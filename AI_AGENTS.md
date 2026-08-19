@@ -107,3 +107,68 @@ git push origin feature/文档1-<改动内容>
 - 回复要简洁、可执行
 - 先给结论，再给命令/文件
 - 涉及文件必须写完整相对路径
+
+## 9. 已知问题（需要 AI 修正）
+
+团队文档中发现以下问题，请 AI 成员在各自负责范围内修正：
+
+1. `开发文档/团队/共同开发文档.md`
+   - 问题：`## 详细上传位置` 曾重复出现两次。
+   - 修正：确保每个标题只出现一次。
+   - 检查：成员分工表是否准确（开发文档1=ARFCON、开发文档2=待补充、开发文档3=wrdqtww、开发文档4=待分配）。
+
+2. `开发文档/团队/README.md`
+   - 问题：只列出了开发文档1，缺少开发文档2/3。
+   - 修正：补全所有团队开发文档条目。
+
+3. `开发文档/规范/文档目录规范.md`
+   - 问题：目录树未跟上现状。
+   - 修正：包含 `开发文档2.md`、`开发文档3.md`、`规范/文档格式规范.md`、`规范/DSH-统一UI开发标准.md`。
+
+4. 重复文档
+   - 问题：`开发文档/团队/开发文档3.txt` 与 `开发文档3.md` 重复。
+   - 修正：保留 `开发文档3.md`，删除旧 `开发文档3.txt`。
+
+5. 格式
+   - 问题：`开发文档1.md` 章节之间排版不统一。
+   - 修正：按 `开发文档/规范/文档格式规范.md` 统一空行与标题层级。
+
+修正后必须在 `开发文档/团队/共同开发文档.md` 和对应个人开发文档的修改记录中登记。
+## 10. 跨平台支持（macOS / Linux / Windows）
+
+- `launcher/core.js` 已支持 `IS_MAC`、Linux（`process.platform === ''linux''`）分支。
+- macOS：`scripts/macos/`；Linux：`scripts/linux/`。
+- 找不到桌面端时回退 `dsh` CLI。
+- 自检页支持检查项目自身更新（本程序版本 / 最新版本 / 检查更新 / 下载新版本）。
+- 修改跨平台代码必须同步更新 `开发文档/规范/跨平台支持规范.md`。
+
+
+- 启动器 launcher/core.js 已支持 macOS（IS_MAC 分支）。
+- macOS 下 indOfficialHarness() 查找 .app，找不到回退 dsh CLI。
+- macOS 脚本：scripts/macos/setup-macos.sh、start-macos.command、uild-macos-app.sh。
+- 修改跨平台代码必须同步更新 开发文档/规范/跨平台支持规范.md。
+
+## 11. 踩坑记录
+
+修改前建议阅读 开发文档/团队/开发踩坑记录.md，避免重复踩坑。
+
+## 12. 每轮任务审查（取消令牌）
+
+- 取消令牌机制，不再登记任何密钥。
+- 每轮任务结束后，AI 必须自动询问：
+  > 是否执行本轮任务审查？
+- 用户确认后，在 `开发文档/团队/确认审查.md` 的“审查记录”登记：
+  - 任务摘要
+  - 审查结果（通过 / 需要修改 / 跳过）
+- 如果用户选择不审查，AI 记录“跳过审查”。
+
+## 13. 强制全局记忆（必做）
+
+- 重要内容必须写入全局记忆：`~/.dsh/memory/memories.jsonl`。
+- 每次查看以下内容后，必须执行记忆脚本：
+  - `README.md`：`pwsh -File scripts/remember-doc.ps1 -DocPath README.md`
+  - `AI_AGENTS.md`：`pwsh -File scripts/remember-doc.ps1 -DocPath AI_AGENTS.md`
+  - 检查流程：`pwsh -File scripts/remember-doc.ps1 -DocPath scripts/check-before-upload.ps1`
+  - 同步流程：`pwsh -File scripts/remember-doc.ps1 -DocPath scripts/sync-repo.ps1`
+- 记忆条目格式：`{type:'doc-view', doc, at, reader, summary}`。
+- 如果发现重要决策/踩坑/版本信息，也必须主动写入全局记忆。
