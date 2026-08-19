@@ -1,8 +1,15 @@
-﻿# Dseam世界（DSH-Hotplug-Hub）
+# Dseam世界（DSH-Hotplug-Hub）
 
 DSH-Hotplug-Hub 是一个**独立于 DSH 的插件拼装启动器**。
 
 它在 DSH 进程之外读取插件组合 → 拼装临时 profile → 冲突预检 → 拉起官方 DSH → 捕获日志 → 自愈闭环。
+
+## 更新公告 · v0.1.7
+
+- 插件包市场接入真实 GitHub 数据源（`lib/index.js` 新增 `marketList` 远程方法，官方 API + 国内镜像兜底）。
+- README 对比提取介绍与安装方法，生成可导入 hotpack manifest；支持搜索 / 标签多选筛选 / 来源切换 / 分页去重 / 本地缓存。
+- 修复市场「加载更多」重复加载：分页按 repo 去重，只抓新条目；加载更多时保留已有卡片，仅底部显示加载中。
+- 桌面版内嵌 `prototype.html` 市场页同步接入真实数据源。
 
 ## 更新公告 · v0.1.5
 

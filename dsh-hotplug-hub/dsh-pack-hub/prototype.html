@@ -341,7 +341,7 @@ button { font: inherit; color: inherit; }
       </div>
       <div>
         <div class="brand-name">Dseam世界</div>
-        <div class="brand-sub">Dseam v0.1.5</div>
+        <div class="brand-sub">Dseam v0.1.7</div>
       </div>
     </div>
     <nav class="nav" id="nav"></nav>
@@ -550,6 +550,7 @@ let marketTopic = MARKET_DEFAULT_TOPIC; // GitHub 标签
 let marketPage = 1;           // 当前分页
 let marketCachedAt = '';      // 缓存时间（localStorage）
 let marketTagsOpen = false;   // 标签面板是否展开（默认折叠）
+let marketAppending = false; // 加载更多时保留已有卡片，仅底部显示加载中
 
 function marketCacheKey() { return 'dsh-market-' + marketTopic + '-' + (marketQuery || '').trim() + '-' + marketSource; }
 
@@ -828,6 +829,7 @@ async function loadMarket(params) {
   marketSource = source;
   marketPage = page;
   marketLoading = true;
+  marketAppending = page > 1; // 加载更多时不清空已有卡片
   marketError = '';
 
   // 缓存：仅第一页可命中；加载更多（page>1）与 refresh 都绕过缓存直接抓取
@@ -850,6 +852,7 @@ async function loadMarket(params) {
   const search = await searchMarketRepos(marketTopic, q, page, source);
   if (!search.ok) {
     marketLoading = false;
+    marketAppending = false;
     marketError = '抓取失败：' + search.error + '。已回退到内置示例目录。';
     renderMarket();
     return { ok: false, error: search.error };
@@ -881,6 +884,7 @@ async function loadMarket(params) {
 
   marketTotal = search.total;
   marketLoading = false;
+  marketAppending = false;
   marketCachedAt = new Date().toISOString();
   if (page === 1) {
     try {
@@ -1126,7 +1130,7 @@ function renderMarket() {
   let body = '';
   let statusLine = '';
 
-  if (marketLoading) {
+  if (marketLoading && !marketAppending) {
     body = `<div class="empty">正在从 GitHub 获取「${esc(marketTopic)}」标签的项目…（官方 API + 国内镜像兜底）</div>`;
   } else if (marketError) {
     statusLine = `<div class="mkt-banner err">${ICONS.warn} ${esc(marketError)} <button class="btn sm" id="retryMarket">重试</button></div>`;
@@ -1140,6 +1144,7 @@ function renderMarket() {
     body = marketData.length
       ? (list.length ? list.map(renderMarketCard).join('') : '<div class="empty">没有匹配的插座包</div>')
       : list.map((p) => packCard(p, false)).join('');
+    if (marketLoading && marketAppending) body += `<div class="empty muted" style="padding:8px">正在加载更多…</div>`;
     if (marketData.length) statusLine = `<div class="footnote">共 ${marketTotal} 个仓库 · 已加载 ${marketData.length} · 数据源 ${srcLabel}${marketCachedAt ? ' · 更新于 ' + new Date(marketCachedAt).toLocaleString() : ''}</div>`;
   }
 

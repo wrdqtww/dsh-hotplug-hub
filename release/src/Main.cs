@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -34,7 +34,7 @@ namespace DSHHotplugHub
     internal sealed class MainForm : Form
     {
         private readonly WebView2 webView = new WebView2();
-        private const string APP_VERSION = "0.1.5";
+        private const string APP_VERSION = "0.1.7";
         private const string PROJECT_REPO = "ARFCON/dsh-hotplug-hub";
 
         public MainForm()
