@@ -296,6 +296,15 @@ button { font: inherit; color: inherit; }
 .mkt-banner { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 8px 12px; border-radius: 8px; margin-bottom: 10px; }
 .mkt-banner.err { background: var(--red-soft, rgba(220,38,38,0.12)); color: var(--red, #dc2626); }
 .mkt-banner.ok { background: var(--green-soft, rgba(16,185,129,0.12)); color: var(--green, #10b981); }
+.mkt-tags { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.mkt-tags-toggle { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line, rgba(128,128,128,0.35)); background: transparent; color: var(--ink); border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; align-self: flex-start; }
+.mkt-tags-toggle:hover { border-color: var(--teal); }
+.mkt-tags-label { font-weight: 600; }
+.mkt-tags-count { font-size: 12px; color: var(--teal); background: rgba(14,124,107,0.12); padding: 1px 8px; border-radius: 999px; }
+.mkt-tags-count.muted { color: var(--muted); background: rgba(128,128,128,0.12); }
+.mkt-tags-caret { font-size: 11px; color: var(--muted); transition: transform 0.15s; }
+.mkt-tags-panel { display: none; }
+.mkt-tags-panel.open { display: flex; }
 .mkt-topic-wrap { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .mkt-topic { width: 130px; padding: 7px 10px; border: 1px solid var(--border, rgba(128,128,128,0.35)); border-radius: 8px; background: transparent; color: inherit; font-size: 13px; }
 .mkt-topic:focus { outline: 2px solid var(--teal); outline-offset: 1px; }
@@ -540,6 +549,7 @@ let marketSource = 'auto';    // auto / github / mirror
 let marketTopic = MARKET_DEFAULT_TOPIC; // GitHub 标签
 let marketPage = 1;           // 当前分页
 let marketCachedAt = '';      // 缓存时间（localStorage）
+let marketTagsOpen = false;   // 标签面板是否展开（默认折叠）
 
 function marketCacheKey() { return 'dsh-market-' + marketTopic + '-' + (marketQuery || '').trim() + '-' + marketSource; }
 
@@ -554,6 +564,7 @@ function sanitizeTopic(t) {
   return ok.slice(0, 4).join(' ');
 }
 
+/* ---- 1. 网络请求层：官方 API + 国内镜像兜底 ---- */
 function apiSearchUrls(topic, q, page, source) {
   const terms = topic.split(/\s+/).map((t) => 'topic:' + t).join(' ');
   const query = 'q=' + encodeURIComponent(terms + (q ? ' ' + q : '')) +
@@ -601,6 +612,7 @@ async function scanFiles(urls, headers) {
   return { ok: false, error: '404' };
 }
 
+/* ---- 2. README 解析层：提取简介与安装方法 ---- */
 function looksLikeNav(para) {
   if (!para) return false;
   const s = String(para).trim();
@@ -661,6 +673,7 @@ function extractInstall(readme) {
 }
 
 // dshpack(.dshpack.json) → hotpack v1 结构
+/* ---- 3. manifest 生成层：生成可导入的 hotpack v1 ---- */
 function dshpackToHotpack(text) {
   let data;
   try { data = JSON.parse(text); } catch (e) { return null; }
@@ -777,6 +790,7 @@ function parseHotpackJson(text) {
   return data;
 }
 
+/* ---- 4. 仓库搜索：按标签分页拉取仓库列表 ---- */
 async function searchMarketRepos(topic, q, page, source) {
   const urls = apiSearchUrls(topic, q, page, source);
   const r = await fetchJson(urls);
@@ -802,6 +816,7 @@ async function searchMarketRepos(topic, q, page, source) {
 }
 
 // 并发受限地拉取前 N 个仓库的详情
+/* ---- 5. 市场加载：搜索 → 并发详情 → 分页去重 → 缓存 ---- */
 async function loadMarket(params) {
   const topic = sanitizeTopic(params && params.topic !== undefined ? params.topic : marketTopic);
   const q = (params && params.q) || marketQuery || '';
@@ -840,12 +855,17 @@ async function loadMarket(params) {
     return { ok: false, error: search.error };
   }
 
-  const metas = search.items.slice(0, 12);
+  // 分页去重：只抓取尚未加载的仓库，已加载的不再重复抓取
+  const loadedRepos = new Set(marketData.map((e) => e.repo));
+  const metas = search.items.slice(0, 12).filter((m) => !loadedRepos.has(m.repo));
   const entries = [];
+  const seen = new Set();
   let idx = 0;
   const worker = async () => {
     while (idx < metas.length) {
       const m = metas[idx++];
+      if (seen.has(m.repo)) continue;
+      seen.add(m.repo);
       try { entries.push(await fetchRepoDetail(m.repo, m.ref, m, source)); }
       catch (e) { /* 单条失败跳过 */ }
     }
@@ -853,9 +873,12 @@ async function loadMarket(params) {
   const workers = [];
   for (let i = 0; i < Math.min(MARKET_DETAIL_CONCURRENCY, metas.length || 1); i++) workers.push(worker());
   await Promise.all(workers);
-  entries.sort((a, b) => b.stars - a.stars);
+  // 合并去重（防止搜索分页在多次调用间条目漂移导致重复）
+  const merged = new Map();
+  marketData.forEach((e) => merged.set(e.repo, e));
+  entries.forEach((e) => { if (e) merged.set(e.repo, e); });
+  marketData = [...merged.values()].sort((a, b) => b.stars - a.stars);
 
-  marketData = page === 1 ? entries : marketData.concat(entries);
   marketTotal = search.total;
   marketLoading = false;
   marketCachedAt = new Date().toISOString();
@@ -1056,6 +1079,7 @@ function marketEntryToImport(entry) {
   };
 }
 
+/* ---- 6. 市场渲染层：卡片与页面 ---- */
 function renderMarketCard(e) {
   const accent = '#0e7c6b';
   const letter = (e.name || e.repo).trim().slice(0, 1);
@@ -1135,9 +1159,16 @@ function renderMarket() {
       <button class="btn" id="importBtn2">${ICONS.upload} 导入文件</button>
     </div>
     ${statusLine}
-    <div class="chip-row" id="marketChips">
-      <button class="chip ${marketFilters.length === 0 ? 'on' : ''}" data-cat="__all">全部</button>
-      ${cats.map((c) => `<button class="chip ${marketFilters.includes(c) ? 'on' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
+    <div class="mkt-tags">
+      <button class="mkt-tags-toggle" id="tagsToggle" aria-expanded="${marketTagsOpen}">
+        <span class="mkt-tags-label">标签</span>
+        ${marketFilters.length ? `<span class="mkt-tags-count">已选 ${marketFilters.length}</span>` : '<span class="mkt-tags-count muted">全部</span>'}
+        <span class="mkt-tags-caret">${marketTagsOpen ? '▾' : '▸'}</span>
+      </button>
+      <div class="chip-row mkt-tags-panel${marketTagsOpen ? ' open' : ''}" id="marketChips">
+        <button class="chip ${marketFilters.length === 0 ? 'on' : ''}" data-cat="__all">全部</button>
+        ${cats.map((c) => `<button class="chip ${marketFilters.includes(c) ? 'on' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
+      </div>
     </div>
     <div class="pack-grid">
       ${body}
@@ -1152,6 +1183,8 @@ function renderMarket() {
   $('doSearchMarket').addEventListener('click', doMarketSearch);
   $('refreshMarket').addEventListener('click', doMarketRefresh);
   $('importBtn2').addEventListener('click', () => $('importFile').click());
+  const tagsToggle = $('tagsToggle');
+  if (tagsToggle) tagsToggle.addEventListener('click', () => { marketTagsOpen = !marketTagsOpen; renderMarket(); });
   const more = $('moreMarket'); if (more) more.addEventListener('click', doMarketMore);
   const retry = $('retryMarket'); if (retry) retry.addEventListener('click', doMarketRefresh);
   document.querySelectorAll('#marketChips .chip').forEach((c) => c.addEventListener('click', () => {
